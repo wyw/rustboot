@@ -1,0 +1,29 @@
+Initial author, project lead, target of blame:
+
+Graydon Hoare <graydon@mozilla.com>
+
+Other authors:
+
+Adam Bozanich <adam.boz@gmail.com>
+Andreas Gal <gal@mozilla.com>
+Benjamin Jackman <ben@jackman.biz>
+Brendan Eich <brendan@mozilla.org>
+Brian Anderson <andersrb@gmail.com>
+Chris Double <chris.double@double.co.nz>
+Dave Herman <dherman@mozilla.com>
+Jason Orendorff <jorendorff@mozilla.com>
+Jeff Balogh <jbalogh@mozilla.com>
+Jeff Mulzelaar <jmuizelaar@mozilla.com>
+Jeffrey Yasskin <jyasskin@gmail.com>
+Kelly Wilson <wilsonk@cpsc.ucalgary.ca>
+Lindsey Kuper <lkuper@mozilla.com>
+Marijn Haverbeke <marijnh@gmail.com>
+Matt Brubeck <mbrubeck@limpet.net>
+Michael Bebenita <mbebenita@mozilla.com>
+Or Brostovski <tohava@gmail.com>
+Patrick Walton <pwalton@mozilla.com>
+Peter Hull <peterhull90@gmail.com>
+Ralph Giles <giles@thaumas.net>
+Rafael Ávila de Espíndola <respindola@mozilla.com>
+Roy Frostig <rfrostig@mozilla.com>
+Tim Chevalier <chevalier@alum.wellesley.edu>

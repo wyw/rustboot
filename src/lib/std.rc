@@ -1,0 +1,87 @@
+meta (name = "std",
+      desc = "Rust standard library",
+      uuid = "122bed0b-c19b-4b82-b0b7-7ae8aead7297",
+      url = "http://rust-lang.org/src/std",
+      ver = "0.0.1");
+
+// Built-in types support modules.
+
+mod _int;
+mod _uint;
+mod _u8;
+mod _vec;
+mod _str;
+
+// General io and system-services modules.
+
+mod io;
+mod sys;
+mod _task;
+
+// Utility modules.
+
+mod option;
+mod util;
+
+// Authorize various rule-bendings.
+
+auth io = unsafe;
+auth fs = unsafe;
+auth os_fs = unsafe;
+auth run = unsafe;
+auth _str = unsafe;
+auth _vec = unsafe;
+auth _task = unsafe;
+
+auth dbg = unsafe;
+
+auth _uint::next_power_of_two = unsafe;
+auth map::mk_hashmap = unsafe;
+auth rand::mk_rng = unsafe;
+
+// Target-os module.
+
+// TODO: Have each os module re-export everything from genericos.
+mod generic_os;
+
+alt (target_os) {
+    case ("win32") {
+        mod os = "win32_os.rs";
+        mod os_fs = "win32_fs.rs";
+    } case ("macos") {
+        mod os = "macos_os.rs";
+        mod os_fs = "posix_fs.rs";
+    } case (_) {
+        mod os = "linux_os.rs";
+        mod os_fs = "posix_fs.rs";
+    }
+}
+
+mod run = "run_program.rs";
+mod fs;
+
+// FIXME: parametric
+mod map;
+mod deque;
+mod list;
+mod rand;
+mod dbg;
+mod bitv;
+mod sort;
+mod sha1;
+mod ebml;
+mod ufind;
+mod extfmt;
+mod box;
+mod getopts;
+mod term;
+mod time;
+
+// Local Variables:
+// mode: rust;
+// fill-column: 78;
+// indent-tabs-mode: nil
+// c-basic-offset: 4
+// buffer-file-coding-system: utf-8-unix
+// compile-command: "make -k -C .. 2>&1 | sed -e 's/\\/x\\//x:\\//g'";
+// End:

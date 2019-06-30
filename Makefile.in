@@ -1,0 +1,236 @@
+######################################################################
+# Residual auto-configuration
+######################################################################
+
+include config.mk
+MKFILES := Makefile config.mk $(wildcard $(CFG_SRC_DIR)/mk/*.mk)
+
+ifneq ($(MAKE_RESTARTS),)
+CFG_INFO := $(info cfg: make restarts: $(MAKE_RESTARTS))
+endif
+
+CFG_INFO := $(info cfg: building on $(CFG_OSTYPE) $(CFG_CPUTYPE))
+
+ifdef CFG_DISABLE_OPTIMIZE
+  $(info cfg: disabling rustc optimization (CFG_DISABLE_OPTIMIZE))
+  CFG_RUSTC_FLAGS :=
+else
+  CFG_RUSTC_FLAGS := -O
+endif
+
+ifdef SAVE_TEMPS
+  CFG_RUSTC_FLAGS += --save-temps
+endif
+ifdef TIME_PASSES
+  CFG_RUSTC_FLAGS += --time-passes
+endif
+ifdef NO_TYPESTATE
+  CFG_RUSTC_FLAGS += --no-typestate
+endif
+ifdef DEBUG
+  CFG_RUSTC_FLAGS += -g
+endif
+
+# platform-specific auto-configuration
+include $(CFG_SRC_DIR)/mk/platform.mk
+
+CFG_RUNTIME :=$(call CFG_LIB_NAME,rustrt)
+CFG_RUSTLLVM :=$(call CFG_LIB_NAME,rustllvm)
+CFG_STDLIB :=$(call CFG_LIB_NAME,std)
+CFG_RUSTCLIB :=$(call CFG_LIB_NAME,rustc)
+
+# version-string calculation
+CFG_GIT_DIR := $(CFG_SRC_DIR).git
+CFG_VERSION := prerelease
+ifneq ($(wildcard $(CFG_GIT_DIR)),)
+    CFG_VERSION += $(shell git --git-dir=$(CFG_GIT_DIR) log -1 \
+                     --pretty=format:'(%h %ci)')
+endif
+
+ifdef CFG_OCAMLC_OPT
+  $(info cfg: have ocaml native compiler)
+  OPT=.opt
+else ifdef CFG_OCAMLC
+  $(info cfg: have only ocaml bytecode compiler)
+endif
+
+ifdef CFG_DISABLE_VALGRIND
+  $(info cfg: disabling valgrind (CFG_DISABLE_VALGRIND))
+  CFG_VALGRIND :=
+endif
+ifdef CFG_BAD_VALGRIND
+  $(info cfg: disabling valgrind due to its unreliability on this platform)
+  CFG_VALGRIND :=
+endif
+
+DOCS :=
+ifeq ($(CFG_MAKEINFO),)
+  $(info cfg: no makeinfo found, omitting doc/rust.html)
+else
+  DOCS += doc/rust.html
+endif
+
+ifeq ($(CFG_TEXI2PDF),)
+  $(info cfg: no texi2pdf found, omitting doc/rust.pdf)
+else
+  ifeq ($(CFG_TEX),)
+    $(info cfg: no tex found, omitting doc/rust.pdf)
+  else
+    DOCS += doc/rust.pdf
+  endif
+endif
+
+ifdef CFG_DISABLE_DOCS
+  $(info cfg: disabling doc build (CFG_DISABLE_DOCS))
+  DOCS :=
+endif
+
+######################################################################
+# Target-and-rule "utility variables"
+######################################################################
+
+ifdef VERBOSE
+  Q :=
+  E =
+else
+  Q := @
+  E = echo $(1)
+endif
+
+S := $(CFG_SRC_DIR)
+X := $(CFG_EXE_SUFFIX)
+
+# Look in doc and src dirs.
+VPATH := $(S)doc $(S)src
+
+# Compilers we build, we now know how to run.
+STAGE0 := $(Q)$(call CFG_RUN_TARG,stage0,\
+                stage0/rustc$(X) $(CFG_RUSTC_FLAGS) -L stage1)
+STAGE1 := $(Q)$(call CFG_RUN_TARG,stage1, \
+                stage1/rustc$(X) $(CFG_RUSTC_FLAGS) -L stage2)
+STAGE2 := $(Q)$(call CFG_RUN_TARG,stage2, \
+                stage2/rustc$(X) $(CFG_RUSTC_FLAGS) -L stage3)
+
+# "Source" files we generate in builddir along the way.
+GENERATED :=
+
+# Delete the built-in rules.
+.SUFFIXES:
+%:: %,v
+%:: RCS/%,v
+%:: RCS/%
+%:: s.%
+%:: SCCS/s.%
+
+######################################################################
+# Standard library variables
+######################################################################
+
+STDLIB_CRATE := $(S)src/lib/std.rc
+STDLIB_INPUTS := $(wildcard $(addprefix $(S)src/lib/,*.rc *.rs */*.rs))
+
+######################################################################
+# rustc crate variables
+######################################################################
+
+COMPILER_CRATE := $(S)src/comp/rustc.rc
+COMPILER_INPUTS := $(wildcard $(addprefix $(S)src/comp/, \
+                                rustc.rc *.rs */*.rs))
+
+######################################################################
+# Main target dependency variables
+######################################################################
+
+LREQ := rt/$(CFG_RUNTIME) rustllvm/$(CFG_RUSTLLVM)
+SREQ0 := stage0/rustc$(X) $(LREQ) stage1/glue.o stage1/$(CFG_STDLIB)
+SREQ1 := stage1/rustc$(X) $(LREQ) stage2/glue.o stage2/$(CFG_STDLIB)
+SREQ2 := stage2/rustc$(X) $(LREQ) stage3/glue.o stage3/$(CFG_STDLIB)
+
+
+######################################################################
+# Exports for sub-utilities
+######################################################################
+
+export CFG_SRC_DIR
+export CFG_VERSION
+
+######################################################################
+# Subprograms
+######################################################################
+
+LLVM_AS := $(CFG_LLVM_BINDIR)/llvm-as
+
+
+######################################################################
+# Single-target rules
+######################################################################
+
+ifneq ($(CFG_IN_TRANSITION),)
+
+CFG_INFO := $(info cfg: *** compiler is in snapshot transition ***)
+CFG_INFO := $(info cfg: *** stage2 and later will not be built ***)
+
+all: rt/$(CFG_RUNTIME)          \
+     rustllvm/$(CFG_RUSTLLVM)   \
+     stage0/$(CFG_STDLIB)       \
+     stage0/intrinsics.bc       \
+     stage0/rustc$(X)           \
+     $(GENERATED)               \
+     $(DOCS)                    \
+     stage1/$(CFG_STDLIB)       \
+     stage1/intrinsics.bc       \
+     stage1/glue.o              \
+     stage1/rustc$(X)           \
+
+else
+
+all: rt/$(CFG_RUNTIME)          \
+     rustllvm/$(CFG_RUSTLLVM)   \
+     stage0/$(CFG_STDLIB)       \
+     stage0/intrinsics.bc       \
+     stage0/rustc$(X)           \
+     $(GENERATED)               \
+     $(DOCS)                    \
+     stage1/$(CFG_STDLIB)       \
+     stage1/intrinsics.bc       \
+     stage1/glue.o              \
+     stage1/rustc$(X)           \
+     stage2/$(CFG_STDLIB)       \
+     stage2/intrinsics.bc       \
+     stage2/glue.o              \
+     stage2/rustc$(X)           \
+     stage3/$(CFG_STDLIB)       \
+     stage3/glue.o              \
+     stage3/intrinsics.bc       \
+     stage3/rustc$(X)
+
+endif
+
+
+######################################################################
+# Re-configuration
+######################################################################
+
+config.mk: $(S)configure $(S)Makefile.in $(S)src/snapshots.txt
+	@$(call E, cfg: reconfiguring)
+	$(S)configure $(CFG_CONFIGURE_ARGS)
+
+
+######################################################################
+# Additional makefiles
+######################################################################
+
+include $(CFG_SRC_DIR)/mk/intrinsics.mk
+include $(CFG_SRC_DIR)/mk/stage0.mk
+include $(CFG_SRC_DIR)/mk/stage1.mk
+include $(CFG_SRC_DIR)/mk/stage2.mk
+include $(CFG_SRC_DIR)/mk/stage3.mk
+include $(CFG_SRC_DIR)/mk/rt.mk
+include $(CFG_SRC_DIR)/mk/rustllvm.mk
+include $(CFG_SRC_DIR)/mk/docs.mk
+include $(CFG_SRC_DIR)/mk/tests.mk
+include $(CFG_SRC_DIR)/mk/dist.mk
+include $(CFG_SRC_DIR)/mk/snap.mk
+include $(CFG_SRC_DIR)/mk/clean.mk
+include $(CFG_SRC_DIR)/mk/autodep.mk
+include $(CFG_SRC_DIR)/mk/fuzzer.mk

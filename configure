@@ -1,0 +1,293 @@
+#!/bin/sh
+
+msg() {
+    echo "configure: $1"
+}
+
+step_msg() {
+    msg
+    msg "$1"
+    msg
+}
+
+err() {
+    echo "configure: error: $1"
+    exit 1
+}
+
+
+need_cmd() {
+    if which $1 >/dev/null 2>&1
+    then msg "found $1"
+    else err "need $1"
+    fi
+}
+
+make_dir() {
+    if [ ! -d $1 ]
+    then
+        msg "mkdir -p $1"
+        mkdir -p $1
+    fi
+}
+
+copy() {
+    msg "cp $1 $2"
+    cp $1 $2
+}
+
+putvar() {
+    local T
+    eval T=\$$1
+    eval TLEN=\${#$1}
+    if [ $TLEN -gt 35 ]
+    then
+        printf "configure: %-20s := %.35s ...\n" $1 "$T"
+    else
+        printf "configure: %-20s := %s\n" $1 "$T"
+    fi
+    printf "%-20s := %s\n" $1 "$T" >>config.mk
+}
+
+probe() {
+    local V=$1
+    local P=$2
+    local T
+    T=$(which $P 2>&1)
+    if [ $? -ne 0 ]
+    then
+        T=""
+    fi
+    eval $V=\$T
+    putvar $V
+}
+
+probe_need() {
+    local V=$1
+    local P=$2
+    probe $V $P
+    eval VV=\$$V
+    if [ -z "$VV" ]
+    then
+        err "required program '$P' not found"
+    fi
+}
+
+opt() {
+    local OP=$1
+    local DEFAULT=$2
+    shift
+    shift
+    local DOC="$*"
+    local FLAG=""
+
+    if [ $DEFAULT -eq 0 ]
+    then
+        FLAG="enable"
+    else
+        FLAG="disable"
+        DOC="don't $DOC"
+    fi
+
+    if [ $HELP -eq 0 ]
+    then
+        for arg in $CFG_CONFIGURE_ARGS
+        do
+            if [ "$arg" = "--${FLAG}-${OP}" ]
+            then
+                OP=$(echo $OP | tr 'a-z' 'A-Z')
+                FLAG=$(echo $FLAG | tr 'a-z' 'A-Z')
+                local V="CFG_${FLAG}_${OP}"
+                eval $V=1
+                putvar $V
+            fi
+        done
+    else
+        if [ ! -z "$META" ]
+        then
+            OP="$OP=<$META>"
+        fi
+        printf "    --%-30s %s\n" "$FLAG-$OP" "$DOC"
+     fi
+}
+
+msg "looking for configure programs"
+need_cmd mkdir
+need_cmd printf
+need_cmd cut
+need_cmd grep
+need_cmd xargs
+need_cmd cp
+need_cmd find
+need_cmd uname
+need_cmd date
+need_cmd tr
+need_cmd sed
+
+msg "inspecting environment"
+
+CFG_OSTYPE=$(uname -s)
+
+CFG_CPUTYPE=$(uname -m)
+if [ $CFG_OSTYPE = Darwin -a $CFG_CPUTYPE = i386 ]
+then
+    # Darwin's `uname -s` lies and always returns i386. We have to use sysctl
+    # instead.
+    if sysctl hw.optional.x86_64 | grep ': 1'
+    then
+        CFG_CPUTYPE=x86_64
+    fi
+fi
+
+CFG_SELF=$(echo $0 | tr '\\' '/')
+CFG_SRC_DIR=${CFG_SELF%${CFG_SELF##*/}}
+CFG_BUILD_DIR=$(echo $PWD | tr '\\' '/')
+CFG_CONFIGURE_ARGS="$@"
+
+OPTIONS=""
+HELP=0
+if [ "$1" = "--help" ]
+then
+    HELP=1
+    shift
+    echo ""
+    echo "Usage: $CFG_SELF [options]"
+    echo ""
+    echo "Options:"
+    echo ""
+else
+    msg "recreating config.mk"
+    echo '' >config.mk
+
+    step_msg "processing $CFG_SELF args"
+fi
+
+opt valgrind 1 "run tests with valgrind"
+opt docs     1 "build documentation"
+opt optimize 1 "build optimized rust code"
+
+
+if [ $HELP -eq 1 ]
+then
+    echo ""
+    exit 0
+fi
+
+step_msg "making directories"
+for i in \
+    doc \
+    boot/fe boot/me boot/be boot/driver boot/util \
+    rt rt/isaac rt/bigint rt/sync rt/test \
+    rustllvm \
+    dl stage0 stage1 stage2 stage3 \
+    test/run-pass test/run-fail test/compile-fail \
+    test/bench/99-bottles test/bench/shootout
+do
+    make_dir $i
+done
+
+step_msg "writing out basic parameters"
+putvar CFG_SRC_DIR
+putvar CFG_BUILD_DIR
+putvar CFG_OSTYPE
+putvar CFG_CPUTYPE
+putvar CFG_CONFIGURE_ARGS
+
+step_msg "looking for build programs"
+probe_need CFG_GIT          git
+probe_need CFG_PERL         perl
+probe_need CFG_PYTHON       python
+probe_need CFG_CURL         curl
+
+probe CFG_CLANG            clang++
+probe CFG_GCC              gcc
+probe CFG_LLVM_CONFIG      llvm-config
+probe CFG_VALGRIND         valgrind
+probe CFG_OCAMLC           ocamlc
+probe CFG_OCAMLOPT         ocamlopt
+probe CFG_OCAMLC_OPT       ocamlc.opt
+probe CFG_OCAMLOPT_OPT     ocamlopt.opt
+probe CFG_FLEXLINK         flexlink
+probe CFG_MAKEINFO         makeinfo
+probe CFG_TEXI2PDF         texi2pdf
+probe CFG_TEX              tex
+
+if [ -z "$CFG_CLANG" -a -z "$CFG_GCC" ]
+then
+    err "either clang or gcc is required"
+fi
+
+if head -n 1 ${CFG_SRC_DIR}src/snapshots.txt | grep -q '^T'
+then
+    CFG_IN_TRANSITION=1
+    putvar CFG_IN_TRANSITION
+fi
+
+# Valgrind is only reliable on Linux. On Windows it doesn't work at all, and
+# on the Mac the dynamic linker causes Valgrind to emit a huge stream of
+# errors.
+if [ $CFG_OSTYPE != Linux ]
+then
+    CFG_BAD_VALGRIND=1
+    putvar CFG_BAD_VALGRIND
+fi
+
+if [ ! -z "$CFG_LLVM_ROOT" ]
+then
+    CFG_LLVM_INCDIR="$CFG_LLVM_ROOT/include"
+    CFG_LLVM_BINDIR="$CFG_LLVM_ROOT/bin"
+    CFG_LLVM_LIBDIR="$CFG_LLVM_ROOT/lib"
+    CFG_LLVM_CXXFLAGS="-I$CFG_LLVM_INCDIR"
+    CFG_LLVM_LDFLAGS=""
+    CFG_LLVM_LIBS=$(find "$CFG_LLVM_LIBDIR" \
+                    -name '*.lib' \
+                    -exec echo '\"{}\"' ';' \
+                    | xargs echo)
+    CFG_LLVM_VERSION=$("$CFG_LLVM_BINDIR/llc" \
+                       --version \
+                       | grep version \
+                       | cut -d ' ' -f 5-)
+    CFG_LLVM_TRIPLE=$("$CFG_LLVM_BINDIR/llc" \
+                      --version \
+                      | grep Host: \
+                      | cut -d ' ' -f 4-)
+elif [ ! -z "$CFG_LLVM_CONFIG" ]
+then
+    CFG_LLVM_VERSION=$(llvm-config --version)
+    CFG_LLVM_INCDIR=$(llvm-config --includedir)
+    CFG_LLVM_BINDIR=$(llvm-config --bindir)
+    CFG_LLVM_LIBDIR=$(llvm-config --libdir)
+    CFG_LLVM_CXXFLAGS=$(llvm-config --cxxflags)
+    CFG_LLVM_LDFLAGS=$(llvm-config --ldflags)
+    CFG_LLVM_LIBS=$(llvm-config --libs)
+    CFG_LLVM_TRIPLE=$(llvm-config --host-target)
+else
+    err "either the \"CFG_LLVM_ROOT\" environment variable must be set, or a \
+\"llvm-config\" script must be present"
+fi
+
+case $CFG_LLVM_VERSION in
+    (3.0svn | 3.0)
+    step_msg "found ok version of LLVM: $CFG_LLVM_VERSION"
+    ;;
+    (*)
+    err "bad LLVM version: $CFG_LLVM_VERSION, need >=3.0svn"
+    ;;
+esac
+
+putvar CFG_LLVM_INCDIR
+putvar CFG_LLVM_BINDIR
+putvar CFG_LLVM_LIBDIR
+putvar CFG_LLVM_CXXFLAGS
+putvar CFG_LLVM_LDFLAGS
+putvar CFG_LLVM_LIBS
+putvar CFG_LLVM_TRIPLE
+
+# Munge any paths that appear in config.mk back to posix-y
+perl -i.bak -p -e 's@ ([a-zA-Z]):[/\\]@ /\1/@go;' \
+               -e 's@\\@/@go;' config.mk
+rm -f config.mk.bak
+
+copy ${CFG_SRC_DIR}Makefile.in ./Makefile
+
+step_msg "complete"

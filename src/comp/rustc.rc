@@ -1,0 +1,90 @@
+
+// -*- rust -*-
+
+meta (name = "rustc",
+      desc = "The Rust compiler",
+      uuid = "0ce89b41-2f92-459e-bbc1-8f5fe32f16cf",
+      url = "http://rust-lang.org/src/rustc",
+      ver = "0.0.1");
+
+use std;
+
+mod middle {
+    mod type_glue;
+    mod trans;
+    mod ty;
+    mod fold;
+    mod walk;
+    mod metadata;
+    mod resolve;
+    mod typeck;
+    mod typestate_check;
+}
+
+mod pretty {
+    mod pprust;
+    mod pp;
+}
+
+mod front {
+    mod ast;
+    mod creader;
+    mod extfmt;
+    mod extenv;
+    mod codemap;
+    mod lexer;
+    mod parser;
+    mod token;
+    mod eval;
+}
+
+mod back {
+    mod link;
+    mod abi;
+    mod upcall;
+    mod x86;
+}
+
+mod driver {
+    mod rustc;
+    mod session;
+}
+
+mod util {
+    mod common;
+    mod typestate_ann;
+}
+
+auth front::creader::load_crate = unsafe;
+auth front::creader::get_metadata_section = unsafe;
+auth middle::metadata = unsafe;
+auth middle::trans = unsafe;
+auth lib::llvm = unsafe;
+
+mod lib {
+    alt (target_os) {
+        case ("win32") {
+            let (llvm_lib = "rustllvm.dll") {
+                mod llvm;
+            }
+        }
+        case ("macos") {
+            let (llvm_lib = "librustllvm.dylib") {
+                mod llvm;
+            }
+        }
+        case (_) {
+            let (llvm_lib = "librustllvm.so") {
+                mod llvm;
+            }
+        }
+    }
+}
+
+// Local Variables:
+// fill-column: 78;
+// indent-tabs-mode: nil
+// c-basic-offset: 4
+// buffer-file-coding-system: utf-8-unix
+// compile-command: "make -k -C $RBUILD 2>&1 | sed -e 's/\\/x\\//x:\\//g'";
+// End:
